@@ -1,0 +1,112 @@
+---
+title: "Shiny - Part1"
+author: "Akash Kumar Singh"
+date: "2022-12-05"
+output: html_document
+---
+
+#Importing Dataset
+```{r}
+# read in the data
+library(tidyverse)
+datafile <- "https://intro-datascience.s3.us-east-2.amazonaws.com/HMO_data.csv"
+health_data <- read_csv(datafile)
+
+# Explore the data
+summary(health_data)
+str(health_data)
+```
+
+#Cleaning the dataset and Interpolting for missing values
+```{r}
+# After we check the dataframe, we find that there are NA values in the bmi and 
+# hypertension columns
+# calculate the NA rows
+nrow(health_data[is.na(health_data$bmi),])
+nrow(health_data[is.na(health_data$hypertension),])
+
+# deal with the missing values
+library(imputeTS)
+health_data$bmi <- na_interpolation(health_data$bmi)
+
+# use sample to fill NA values in hypertension column, in case generate decimal
+health_data$hypertension <- ifelse(is.na(health_data$hypertension),
+                                  sample(c(0,1), size = nrow(health_data), replace = TRUE),
+                                  health_data$hypertension)
+nrow(health_data[is.na(health_data$bmi),])
+nrow(health_data[is.na(health_data$hypertension),])
+```
+
+#Defining "Expensive" and "Non-Expensive"
+```{r}
+# According to the distribution of cost, we can define $5779.8 (80% value) as the threshold.
+# If the cost is higher than 5779.8, it is expensive; if not, it is non-expensive.
+# Source Reference: https://www.ehealthinsurance.com/resources/individual-and-family/how-much-does-individual-health-insurance-cost
+```
+
+#Creating "Expensive" column
+```{r}
+# create a new column named expensive, if cost > 5779.8, the valuse is 1, otherwise 0
+health_data$expensive <- ifelse(health_data$cost > 5779.8, 1, 0)
+# check the distribution of the new column
+table(health_data$expensive)
+```
+
+#Creating a new column and storing certain variables in a dummy format
+```{r}
+#convert the data type to numeric
+health_data$smoker1 <- ifelse(health_data$smoker=="yes",1,0)
+health_data$exercise1 <-  ifelse(health_data$exercise=="Active",1,0)
+health_data$yearly_physical1 <- ifelse(health_data$yearly_physical=="Yes",1,0)
+```
+
+#Logistic Regression using only statistically significant variables
+```{r}
+#Regression Model
+mylogit1 <- glm(expensive ~ age + bmi + children + smoker1 + yearly_physical1 + exercise1 + hypertension, data = health_data, family = "binomial")
+summary(mylogit1)
+```
+
+#Shiny - Part 1
+```{r}
+library(rsconnect)
+library(shiny)
+
+rsconnect::setAccountInfo(name='akashsingh',
+			  token='2E278F9AD4E9B9EB0EF3CB00A30B5DC3',
+			  secret='HASJ9huVSIiJtPtV3+XVUmAYOjAW/xrPtNS8DRHc')
+
+ui <- fluidPage(
+  titlePanel("Probability a customer spending more money on health care (Expensive)"),
+  sidebarLayout(
+    sidebarPanel(
+      numericInput("age","Age",0 ),
+      numericInput("bmi","BMI",0),
+       numericInput("children","How many Children",0),
+      numericInput("smoker1","Does the customer smoke? :Yes=1, No=0",0),
+      numericInput("yearly_physical1", "Physical fitness during the year? :Yes=1, No=0",0),
+      numericInput("exercise1","Does the customer exercise? : Active=1, Not-Active=0",0),
+      numericInput("hypertension","Does the customer have hypertension? :Yes=1, No=0",0)
+     
+    ),
+    mainPanel(textOutput("expensive")
+      
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  preddftry<-predDF<-reactive(data.frame("age"=input$age,"bmi" = input$bmi,"children"=input$children,"smoker1"=input$smoker1,"yearly_physical1"=input$yearly_physical1,"exercise1"=input$exercise1,"hypertension"=input$hypertension))
+  outputprediction <- reactive({predict(mylogit1, preddftry(),type='response')})
+  output$expensive<- renderText(outputprediction())
+  
+}
+
+shinyApp(ui, server)
+```
+
+
+
+
+
+

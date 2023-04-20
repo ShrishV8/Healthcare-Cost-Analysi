@@ -1,0 +1,158 @@
+---
+title: "Shiny - Part 2"
+output: html_document
+date: '2022-12-05'
+---
+
+#Loading the dataset
+```{r pressure, echo=FALSE}
+# read in the data
+library(tidyverse)
+datafile <- "https://intro-datascience.s3.us-east-2.amazonaws.com/HMO_data.csv"
+health_data <- read_csv(datafile)
+
+# Explore the data
+summary(health_data)
+str(health_data)
+```
+
+#Checking for missing values and Interpolating them
+```{r pressure, echo=FALSE}
+# After we check the dataframe, we find that there are NA values in the bmi and hypertension columns
+# calculate the NA rows
+nrow(health_data[is.na(health_data$bmi),])
+nrow(health_data[is.na(health_data$hypertension),])
+# deal with the missing values
+library(imputeTS)
+health_data$bmi <- na_interpolation(health_data$bmi)
+
+# use sample to fill NA values in hypertension column, in case generate decimal
+health_data$hypertension <- ifelse(is.na(health_data$hypertension),
+                                  sample(c(0,1), size = nrow(health_data), replace = TRUE),
+                                  health_data$hypertension)
+nrow(health_data[is.na(health_data$bmi),])
+nrow(health_data[is.na(health_data$hypertension),])
+```
+
+#Defining "Expensive" and "Non-Expensive"
+```{r}
+# According to the distribution of cost, we can define $5779.8 (80% value) as the threshold.
+# If the cost is higher than 5779.8, it is expensive; if not, it is non-expensive.
+# Source Reference: https://www.ehealthinsurance.com/resources/individual-and-family/how-much-does-individual-health-insurance-cost
+```
+
+#Creating Expensive column
+```{r}
+# create a new column named expensive, if cost > 5779.8, the valuse is 1, otherwise 0
+health_data$expensive <- ifelse(health_data$cost > 5779.8, 1, 0)
+# check the distribution of the new column
+table(health_data$expensive)
+# check the proportion of the new column
+mean(health_data$expensive)
+#View(health_data)
+```
+
+#Creating factors of smoker, yearly_physical and exercise
+```{r}
+health_data$smoker<- as.factor(health_data$smoker)
+health_data$yearly_physical<-as.factor(health_data$yearly_physical)
+health_data$exercise <- as.factor(health_data$exercise)
+```
+
+#Logistic Regression on statistically significant variables only 
+```{r}
+#Regression Model
+mylogit1 <- glm(expensive ~ age + bmi + children + smoker + yearly_physical + exercise + hypertension, data = health_data, family = "binomial")
+summary(mylogit1)
+```
+
+#SVM model using Logistic Regression training set
+```{r}
+library(kernlab)
+library(caret)
+health_data$expensive <- as.factor(health_data$expensive)
+training <- createDataPartition(y=health_data$expensive,p=.70,list=FALSE)
+train <- health_data[training,] # training set
+test <- health_data[-training,] # test set
+# create a svm model to predict the expensive column
+library(e1071)
+svm_model <- train(expensive ~ age + bmi + children + smoker + yearly_physical + exercise + hypertension, data = train, method = "svmRadial", preProcess = c("center", "scale"))
+# predict the expensive column for the test data
+svm_pred <- predict(svm_model, test)
+# create the sensitivity confusion matrix
+confusionMatrix(svm_pred,test$expensive)
+
+#Saving Model output
+our_model <- svm_model
+save(our_model,file = "our_model.rda")
+```
+
+#Explorting the file we worked on i.e. "Solution File"
+```{r}
+write.csv(health_data,"health_db.csv")
+```
+
+#Importing the testing file which the user will import without the cost column i.e. "Testing File"
+```{r}
+#dftest <- read.csv("HMO_data.csv")
+dftest1<- health_data[,c(-14)] 
+write.csv(dftest1,"dftest1.csv")
+```
+
+#Shiny Code for user to input the "Testing File" and uploading the "Solution File" with number of rows
+#Shiny outputs the confusion matrix with accuracy and sensitivity
+```{r}
+library(rsconnect)
+library(shiny)
+
+rsconnect::setAccountInfo(name='akashsingh',
+			  token='2E278F9AD4E9B9EB0EF3CB00A30B5DC3',
+			  secret='HASJ9huVSIiJtPtV3+XVUmAYOjAW/xrPtNS8DRHc')
+
+ui <- fluidPage(
+  fileInput("upload",label = "Input File",accept = c(".csv")),
+  fileInput("upload_Solution",label = "Solution File",accept = c(".csv")),
+  numericInput("n","Number of Rows", value = 5, min = 1, step = 1),
+  tableOutput("headforDF"),
+  verbatimTextOutput("txt_results",placeholder = TRUE)
+)
+
+server <- function(input,output,session) {
+  getTestData <- reactive({
+    req(input$upload)
+    read_csv(input$upload$name)
+  })
+  
+  getSolutionData <- reactive({
+    req(input$upload_Solution)
+    read_csv(input$upload_Solution$name)
+  })
+  
+  get_n <-reactive({
+    req(input$n)
+  })
+output$txt_results <- renderPrint({
+  dataset <- getTestData()
+  dataset_solution <- getSolutionData()
+  n <-get_n()
+  use_model_to_predict(dataset[1:n,],dataset_solution[1:n,])
+  })
+output$headForDF <- renderTable({
+  df <- getTestData()
+  head(df,n)
+  })
+}
+
+library(caret)
+library(kernlab)
+library(e1071)
+
+use_model_to_predict <- function(df,df_solution){
+  load(file="our_model.rda")
+  svmPred <- predict(our_model,df,type="raw")
+  df_solution$expensive <- as.factor(df_solution$expensive)
+  confusionMatrix(svmPred, df_solution$expensive)
+}
+shinyApp(ui=ui,server=server)
+```
+

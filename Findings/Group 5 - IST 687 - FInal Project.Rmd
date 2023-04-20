@@ -1,0 +1,395 @@
+## IST 687 - Final Project - Group 5
+
+#Step 1: Importing Dataset
+```{r cars}
+# read in the data
+library(tidyverse)
+datafile <- "https://intro-datascience.s3.us-east-2.amazonaws.com/HMO_data.csv"
+health_data <- read_csv(datafile)
+
+# Explore the data
+summary(health_data)
+```
+
+## 1b) Checked and Cleaned NA values
+```{r}
+# After we check the dataframe, we find that there are NA values in the bmi and hypertension columns
+# calculate the NA rows
+nrow(health_data[is.na(health_data$bmi),])
+nrow(health_data[is.na(health_data$hypertension),])
+
+# deal with the missing values
+library(imputeTS)
+health_data$bmi <- na_interpolation(health_data$bmi)
+
+# use sample to fill NA values in hypertension column, in case generate decimal
+health_data$hypertension <- ifelse(is.na(health_data$hypertension),
+                                  sample(c(0,1), size = nrow(health_data), replace = TRUE),
+                                  health_data$hypertension)
+nrow(health_data[is.na(health_data$bmi),])
+nrow(health_data[is.na(health_data$hypertension),])
+```
+
+```{r}
+# list all the unique values in the hypertension column
+unique(health_data$hypertension)
+```
+
+
+# 2. Explore data
+Understand the distribution of cost data
+
+## 2a) key values
+```{r}
+# min
+min(health_data$cost)
+max(health_data$cost)
+mean(health_data$cost)
+```
+
+#Step 3: Distribution of cost column
+```{r}
+#Checking the shape of the cost column distribution
+quantile(health_data$cost)
+
+#Checking the shape of the cost column distribution (with 10% distribution interval)
+quantile(health_data$cost,seq(0.1,1,0.1))
+
+#Visualizing the spread of cost column
+hist(health_data$cost,)
+```
+
+## 2c) define expensive and non-expensive
+```{r}
+# According to the distribution of cost, we can define $5779.8 (80% value) as the threshold.
+# If the cost is higher than 5779.8, it is expensive; if not, it is non-expensive.
+# Source Reference: https://www.ehealthinsurance.com/resources/individual-and-family/how-much-does-individual-health-insurance-cost
+```
+
+#Step 3a) Creating 'expensive' column
+```{r}
+#Creating a new column named 'expensive', if cost > 5779.8, then the value is 1, otherwise 0
+health_data$expensive <- ifelse(health_data$cost > 5779.8, 1, 0)
+#Checking the distribution of the new column
+table(health_data$expensive)
+```
+
+## Step 5 - Creating groups for age and bmi columns
+```{r}
+#Grouping age column with a gap of 10 years
+health_data$age_group <- cut(health_data$age, breaks = seq(10, 70, 10))
+#Checking the distrbution of new age column
+table(health_data$age_group)
+
+#Grouping bmi column with a gap of 5kg/m2
+health_data$bmi_group <- cut(health_data$bmi, breaks = seq(15, 55, 5))
+#Checking the distrbution of new bmi column
+table(health_data$bmi_group)
+```
+
+```{r}
+# create a new dataframe and delete the age and bmi columns
+health_data2 <- health_data[, -c(1,2,3,14)]
+# check the head of the new dataframe
+head(health_data2)
+View(health_data)
+```
+#Descriptive Statistics
+```{r}
+library(Rcmdr)
+numSummary(health_data[,c("age","bmi","children","cost"), drop = FALSE],
+           statistics = c("mean","sd","IQR","skewness","kurtosis"), type = "2")
+```
+
+
+#Correlation Matrix 
+```{r}
+myData <- health_data[,c("age","bmi","children","cost")]
+res <- cor(myData)
+round(res,4)
+```
+
+#4. Visualizations to better understand and analyse the data.
+
+## 4a) distribution of expensive
+```{r}
+library(ggplot2)
+#Check the distribution of expensive column to see that data is properly distributed.
+plot_dist_expensive <- ggplot(health_data2, aes(x=expensive)) + geom_bar()
+plot_dist_expensive
+```
+#Boxplot 
+```{r}
+library(ggplot2)
+BoxPlot1 <- ggplot(health_data, aes(x=expensive, y=age, fill=expensive)) + aes(group=expensive) + geom_boxplot()
+BoxPlot1
+```
+
+
+## 4b) distribution of gender
+```{r}
+#Using qplot to check that is there any gender bias in any of the age groups.
+qplot(age, data = health_data, geom = "histogram",
+      fill = gender)
+#We can see that both genders are qre equally present in each age group.
+hist(health_data$age, main = "Age Distribution", xlab = "Age", col = "orange")
+```
+## 4c) subset of expensive and non-expensive by age
+```{r}
+qplot(age, data = health_data, geom = "histogram", color = factor(expensive))
+```
+
+## 4d) create a barplot to show the distribution of gender by expensive
+```{r}
+# create a barplot to show the distribution of expensive by gender
+barplot(table(health_data2$gender, health_data2$expensive), beside
+        = TRUE, col = c("orange", "blue"), legend = rownames(table(health_data2$gender,health_data2$expensive)))
+```
+## Barplot to show the distribution of age_group by expensive
+```{r}
+age_groupplot <- barplot(table(health_data2$expensive, health_data2$age_group), beside
+        = TRUE, col = c("orange", "blue"), legend = rownames(table(health_data2$expensive,health_data2$age_group)))
+```
+## 4f) create a barplot to show the distribution of expensive by bmi_group
+```{r}
+# create a barplot to show the distribution of expensive by bmi_group
+age_groupplot <- barplot(table(health_data2$expensive, health_data2$bmi_group), beside
+        = TRUE, col = c("orange", "blue"), legend = rownames(table(health_data2$expensive,health_data2$bmi_group)))
+
+```
+
+## 4g) create a barplot to show the distribution of children by expensive
+```{r}
+# create a barplot to show the distribution of children by expensive
+age_groupplot <- barplot(table(health_data2$expensive, health_data2$children), beside
+        = TRUE, col = c("orange", "blue"), legend = rownames(table(health_data2$expensive,health_data2$children)))
+table(health_data2$children)
+```
+
+
+
+## 4h) create a barplot to show the distribution of smoker by expensive
+```{r}
+barplot(table(health_data2$expensive, health_data2$smoker), beside
+        = TRUE, col = c("orange", "blue"),
+        legend = rownames(table(health_data2$expensive,health_data2$smoker)))
+# from the barplot we can see that if the person smoke, it's more possible to be expensive
+```
+## 4i) # create a table to show the distribution of expensive by exercise
+```{r}
+# create a table to show the distribution of expensive by exercise
+table(health_data2$expensive, health_data2$exercise)
+barplot(table(health_data2$expensive, health_data2$exercise), beside
+        = TRUE, col = c("orange", "blue"),
+        legend = rownames(table(health_data2$expensive,health_data2$exercise)))
+```
+## 4j) # create a table to show the distribution of expensive by married
+```{r}
+# create a table to show the distribution of expensive by married
+table(health_data2$expensive, health_data2$married)
+```
+## 4k) # create a plot to show the distribution of expensive by education
+```{r}
+#Using mosiac plot to make an density plot to see that each expensive column's data is distributed equally #from each education level.
+mosaicplot(education_level~expensive,
+           data=health_data2, color = TRUE)
+table(health_data2$expensive,health_data2$education_level)
+#From the visualization below we can see that the expensive column's values are equally distributed in each
+#education level.
+```
+# 4l) Barplot for hypertension
+```{r}
+barplot(table(health_data2$expensive, health_data2$hypertension), beside
+        = TRUE, col = c("orange", "blue"),
+        legend = rownames(table(health_data2$expensive,health_data2$hypertension)))
+table(health_data2$expensive, health_data2$hypertension)
+```
+
+
+#Map graph
+```{r}
+#USA map plot from which states the cost data has been collected.
+library(tidyverse)
+us <- map_data("state")
+health_data$location <- tolower(health_data$location)
+dfMerged <- merge(health_data, us, all.y = TRUE, by.x="location", by.y = "region")
+dfMerged <- dfMerged %>% arrange(order)
+map <- ggplot(dfMerged)
+map <- map + aes(x=long, y=lat, group=group, fill=cost) + geom_polygon(color = "black")
+map <- map + expand_limits(x=dfMerged$long, y=dfMerged$lat)
+map <- map + coord_map() + ggtitle("Data collection from which states")
+map
+#We can see the data is collected from small number of states so location bias can happen if we train the model on this dataset.
+
+```
+
+#Association Rule
+```{r}
+library(arules)
+library(arulesViz)
+
+health_data2$expensive <- as.factor(health_data2$expensive)
+health_transactions <- as(health_data2, 'transactions')
+summary(health_transactions)
+
+itemFrequencyPlot(health_transactions, topN=20)
+healthrules <- apriori(health_transactions,
+ parameter=list(supp=0.05, conf=0.3),
+ control=list(verbose=F),
+ appearance=list(default="lhs",rhs=("expensive=1")))
+
+inspectDT(healthrules)
+```
+# 7. Tree-based model
+
+
+
+# Decision Trees
+```{r}
+library(rpart)
+library(rpart.plot)
+tree <- rpart(expensive ~ ., data = health_data2, method = "class")
+rpart.plot(tree)
+
+# From the below tree, we can know that important columns are: smoker, bmi_group, age_group, exercise
+```
+
+
+# 8.SVM model
+## 8a) Create svm model with all the variables, 80% train data
+```{r}
+# split the data into training and testing
+library(kernlab)
+library(caret)
+
+training <- createDataPartition(y=health_data2$expensive,p=.80,list=FALSE)
+train <- health_data2[training,] # training set, 6066 rows and 13 columns
+test <- health_data2[-training,] # test set, 1516 rows and 13 columns
+
+# create a svm model to predict the expensive column
+library(e1071)
+svm_model <- train(expensive ~ ., data = train, method = "svmRadial", preProcess = c("center", "scale"))
+
+# predict the expensive column for the test data
+svm_pred <- predict(svm_model, test)
+
+# create the sensitivity confusion matrix
+confusionMatrix(svm_pred,test$expensive)
+# The the sensitivity accuracy is 97.36%
+```
+## 8b) Create svm model with all the variables, 70% train data
+```{r}
+library(kernlab)
+library(caret)
+
+health_data2$expensive <- as.factor(health_data2$expensive)
+training1 <- createDataPartition(y=health_data2$expensive,p=.70,list=FALSE)
+train1 <- health_data2[training1,] # training set
+test1 <- health_data2[-training1,] # test set
+dim(train1) # 5308 rows and 13 columns
+dim(test1) # 2274 rows and 13 columns
+
+# create a svm model to predict the expensive column
+library(e1071)
+svm_model3 <- train(expensive ~ ., data = train1, method = "svmRadial", preProcess = c("center", "scale"))
+
+# predict the expensive column for the test data
+svm_pred3 <- predict(svm_model3, test1)
+
+# create the sensitivity confusion matrix
+confusionMatrix(svm_pred3,test1$expensive)
+
+#The sensitivity accuracy is 98.08%, accuracy is 91.16%. 70% train data is better than 80% train data
+```
+
+## 8d) Create svm model with only important variables from tree-based model
+```{r}
+svm_model2 <- train(expensive ~ age_group + bmi_group + smoker + exercise, data = train1, method = "svmRadial", preProcess = c("center", "scale"))
+svm_pred2 <- predict(svm_model2, test1)
+
+# create the sensitivity confusion matrix
+confusionMatrix(svm_pred2,test1$expensive)
+
+# The sensitivity accuracy is 97.53%, the accuracy is 89.75%
+```
+
+So, the svm_model3 is the best model! The sensitivity accuracy is 98.08%, accuracy is 91.16%.
+
+
+#Logistic Regression using all variables 
+```{r}
+library(caTools)
+library(ROCR)
+library(kernlab)
+library(caret)
+
+#Splitting dataset 
+health_data_lr <- health_data[,-c(1,14,16,17)]
+#Logistic Regression
+mylogit <- glm(expensive ~ ., data = health_data_lr, family = "binomial")
+summary(mylogit)
+
+#Splitting data into testing and training data
+health_data_lr$expensive <- as.factor(health_data_lr$expensive)
+training1 <- createDataPartition(y=health_data_lr$expensive,p=.70,list=FALSE)
+train1 <- health_data_lr[training1,] # training set
+test1 <- health_data_lr[-training1,] # test set
+
+#Creating a SVM model to predict the expensive column
+library(e1071)
+svm_model_lr <- train(expensive ~ ., data = train1, method = "svmRadial", preProcess = c("center", "scale"))
+# predict the expensive column for the test data
+svm_pred_lr <- predict(svm_model_lr, test1)
+# create the sensitivity confusion matrix
+confusionMatrix(svm_pred_lr,test1$expensive)
+
+#The overall accuracy is 90.19% and sensitivity is 97.09%
+```
+
+#Logistic Regression using significant variables 
+
+```{r}
+library(caTools)
+library(ROCR)
+library(kernlab)
+library(caret)
+
+#Splitting dataset 
+health_data_lr1 <- health_data[,-c(1,14,16,17)]
+#Logistic Regression
+mylogit1 <- glm(expensive ~ age + bmi + children + smoker + yearly_physical + exercise + hypertension, data = health_data_lr1, family = "binomial")
+summary(mylogit1)
+
+#Splitting dataset into training and testing data
+health_data_lr1$expensive <- as.factor(health_data_lr1$expensive)
+training1 <- createDataPartition(y=health_data_lr1$expensive,p=.70,list=FALSE)
+train1 <- health_data_lr1[training1,] # training set
+test1 <- health_data_lr1[-training1,] # test set
+
+# create a svm model to predict the expensive column
+library(e1071)
+svm_model_lr1 <- train(expensive ~ age + bmi + children + smoker + yearly_physical + exercise + hypertension, data = train1, method = "svmRadial", preProcess = c("center", "scale"))
+# predict the expensive column for the test data
+svm_pred_lr1 <- predict(svm_model_lr1, test1)
+# create the sensitivity confusion matrix
+confusionMatrix(svm_pred_lr1,test1$expensive)
+
+#The overall accuracy is 90.11% and sensitivity is 98.02%
+```
+
+#Neural Network
+```{r}
+#install.packages("neuralnet", dependencies = TRUE)
+library(neuralnet)
+
+health_data_N <- health_data[,-c(1,14,16,17)]
+health_data_N$smokerd <- ifelse(health_data_N$smoker == "yes", 1, 0)
+health_data_N$yearly_physicald <- ifelse(health_data_N$yearly_physical == "Yes", 1, 0)
+health_data_N$exercised <- ifelse(health_data_N$exercise == "Active", 1, 0)
+
+healthNN <- neuralnet(expensive ~ age + bmi + children + smokerd + yearly_physicald + exercised + hypertension, health_data_N, hidden = 2, lifesign = "minimal", linear.output = FALSE, threshold = 0.01)
+plot(healthNN)
+```
+
+
+
